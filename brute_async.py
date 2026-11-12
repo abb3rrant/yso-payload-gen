@@ -139,6 +139,7 @@ async def test_rate(concurrency, timeout):
 
 
 def main():
+    global TARGET
     parser = argparse.ArgumentParser(description="CVE-2025-11367 async AuthKey brute")
     parser.add_argument("--target",      default=TARGET)
     parser.add_argument("--start",       type=int, default=1)
@@ -147,8 +148,6 @@ def main():
     parser.add_argument("--timeout",     type=float, default=2.0, help="Per-probe timeout seconds")
     parser.add_argument("--test-rate",   action="store_true")
     args = parser.parse_args()
-
-    global TARGET
     TARGET = args.target
 
     if args.test_rate:
