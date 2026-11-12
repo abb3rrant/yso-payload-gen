@@ -1,0 +1,34 @@
+name: Build all MBRO variants
+on: [push]
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Clone retarget build
+        run: |
+          git clone https://github.com/securifera/NewRemotingTricks C:\exploit
+          Get-ChildItem -Path C:\exploit -Recurse -Filter "*.csproj" | ForEach-Object {
+            $c = Get-Content $_.FullName -Raw
+            Set-Content -Path $_.FullName -Value ($c -replace 'v4\.5','v4.8')
+          }
+          $vs = & "C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.Component.MSBuild -find MSBuild\**\Bin\MSBuild.exe 2>$null | Select-Object -First 1
+          $sln = Get-ChildItem -Path C:\exploit -Filter "*.sln" | Select-Object -First 1
+          & $vs $sln.FullName /p:Configuration=Release /verbosity:minimal 2>&1 | Select-Object -Last 5
+          
+          # Copy XAML next to all exes
+          $xaml = "C:\exploit\RemotingClient_MBRO\WebClient.xaml.xml"
+          "C:\exploit\RemotingClient_MBRO\bin\Release","C:\exploit\RemotingClient_MBRO_Lazy\bin\Release","C:\exploit\RemotingClient_MBVO\bin\Release" | ForEach-Object {
+            if (Test-Path $_) { Copy-Item $xaml $_ }
+          }
+          
+          Write-Host "=== All built ==="
+          Get-ChildItem -Path C:\exploit -Recurse -Filter "*.exe" | Where-Object { $_.FullName -match "Release" -and $_.Name -notmatch "^obj" } | Select Name,FullName
+
+      - name: Upload all variants
+        uses: actions/upload-artifact@v4
+        with:
+          name: all-mbro
+          path: |
+            C:\exploit\RemotingClient_MBRO\bin\Release\**
+            C:\exploit\RemotingClient_MBRO_Lazy\bin\Release\**
+            C:\exploit\RemotingClient_MBVO\bin\Release\**
