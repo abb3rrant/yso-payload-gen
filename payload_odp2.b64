@@ -1,0 +1,1 @@
+Formatter BinaryFormatter not supported by ObjectDataProvider. Supported formatters are: DataContractSerializer (2) , FastJson , FsPickler , JavaScriptSerializer , Json.Net , MessagePackTypeless , MessagePackTypelessLz4 , SharpSerializerBinary , SharpSerializerXml , Xaml (4) , XmlSerializer (2) , YamlDotNet < 5.0.0
